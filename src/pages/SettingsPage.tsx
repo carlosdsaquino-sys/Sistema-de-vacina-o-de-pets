@@ -9,6 +9,8 @@ import {
   Bot,
   Bell,
   AlertTriangle,
+  CalendarDays,
+  CalendarRange,
 } from 'lucide-react';
 
 import { Layout } from '@/components/layout/Layout';
@@ -34,16 +36,31 @@ import type {
 } from '@/types/database';
 
 // =========================================================
-// EXTENSÃO DAS CONFIGURAÇÕES PARA AUTOMAÇÃO
+// EXTENSÃO DAS CONFIGURAÇÕES
 // =========================================================
 
-type AutomationSettings = Settings & {
+type ExtendedSettings = Settings & {
+  // =======================================================
+  // AUTOMAÇÕES
+  // =======================================================
+
   auto_lembrete_proxima_dose?: boolean;
   auto_lembrete_dias_antes?: number;
 
   auto_aviso_atraso?: boolean;
   auto_atraso_dias_depois?: number;
+
+  // =======================================================
+  // PLANOS DA CADERNETA
+  // =======================================================
+
+  booklet_price_monthly?: number | null;
+  booklet_price_annual?: number | null;
 };
+
+// =========================================================
+// PÁGINA
+// =========================================================
 
 export function SettingsPage() {
   const { toast } = useToast();
@@ -55,7 +72,7 @@ export function SettingsPage() {
     useState(false);
 
   const [form, setForm] =
-    useState<AutomationSettings | null>(
+    useState<ExtendedSettings | null>(
       null
     );
 
@@ -96,7 +113,7 @@ export function SettingsPage() {
         }
 
         const settings =
-          (data as AutomationSettings[])?.[0] ||
+          (data as ExtendedSettings[])?.[0] ||
           null;
 
         if (!settings) {
@@ -105,11 +122,31 @@ export function SettingsPage() {
           return;
         }
 
-        // Garante valores padrão,
-        // inclusive para bancos antigos.
-        const normalizedSettings: AutomationSettings =
+        // ===================================================
+        // NORMALIZAR CAMPOS
+        // ===================================================
+
+        const normalizedSettings: ExtendedSettings =
           {
             ...settings,
+
+            // ===============================================
+            // PREÇOS
+            // ===============================================
+
+            booklet_price_monthly:
+              settings.booklet_price_monthly ??
+              settings.booklet_price ??
+              0,
+
+            booklet_price_annual:
+              settings.booklet_price_annual ??
+              settings.booklet_price ??
+              0,
+
+            // ===============================================
+            // AUTOMAÇÕES
+            // ===============================================
 
             auto_lembrete_proxima_dose:
               settings.auto_lembrete_proxima_dose ??
@@ -284,7 +321,50 @@ export function SettingsPage() {
         return;
       }
 
-      // Validação das automações
+      // =====================================================
+      // VALIDAR PREÇOS
+      // =====================================================
+
+      const monthlyPrice =
+        Number(
+          form.booklet_price_monthly ??
+            0
+        );
+
+      const annualPrice =
+        Number(
+          form.booklet_price_annual ??
+            0
+        );
+
+      if (
+        monthlyPrice <
+        0
+      ) {
+        toast(
+          'O preço mensal não pode ser negativo.',
+          'warning'
+        );
+
+        return;
+      }
+
+      if (
+        annualPrice <
+        0
+      ) {
+        toast(
+          'O preço anual não pode ser negativo.',
+          'warning'
+        );
+
+        return;
+      }
+
+      // =====================================================
+      // VALIDAR AUTOMAÇÕES
+      // =====================================================
+
       if (
         Number(
           form.auto_lembrete_dias_antes
@@ -370,8 +450,16 @@ export function SettingsPage() {
               pdf_info:
                 form.pdf_info,
 
+              // Preço antigo mantido por compatibilidade
               booklet_price:
-                form.booklet_price,
+                annualPrice,
+
+              // Novos preços
+              booklet_price_monthly:
+                monthlyPrice,
+
+              booklet_price_annual:
+                annualPrice,
 
               // =============================================
               // TEMPLATES WHATSAPP
@@ -418,6 +506,15 @@ export function SettingsPage() {
 
           logo_url:
             logoUrl,
+
+          booklet_price:
+            annualPrice,
+
+          booklet_price_monthly:
+            monthlyPrice,
+
+          booklet_price_annual:
+            annualPrice,
         });
 
         setLogoPreview(
@@ -517,7 +614,7 @@ export function SettingsPage() {
     >
       <PageHeader
         title="Configurações"
-        description="Configure os dados do estabelecimento, identidade visual, mensagens e automações"
+        description="Configure os dados do estabelecimento, cadernetas, mensagens e automações"
       />
 
       <div className="space-y-6">
@@ -765,44 +862,197 @@ export function SettingsPage() {
 
           <CardBody>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-6">
 
-              <Input
-                label="Preço da Caderneta (R$)"
-                type="number"
-                step="0.01"
-                value={
-                  form.booklet_price
-                }
-                onChange={(e) =>
-                  setForm({
-                    ...form,
+              {/* =========================================== */}
+              {/* DESCRIÇÃO */}
+              {/* =========================================== */}
 
-                    booklet_price:
-                      Number(
-                        e.target.value
-                      ),
-                  })
-                }
-              />
+              <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-950/20 p-4">
 
-              <Textarea
-                label="Informações que aparecem no PDF"
-                value={
-                  form.pdf_info ||
-                  ''
-                }
-                onChange={(e) =>
-                  setForm({
-                    ...form,
+                <div className="flex items-start gap-3">
 
-                    pdf_info:
-                      e.target.value,
-                  })
-                }
-                rows={2}
-                placeholder="Informações adicionais no rodapé do PDF"
-              />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+
+                    <BookOpen className="w-5 h-5" />
+
+                  </div>
+
+                  <div>
+
+                    <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                      Planos da Caderneta Digital
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-emerald-700/80 dark:text-emerald-400">
+                      Defina os valores cobrados para acesso mensal ou anual à caderneta digital do pet.
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* =========================================== */}
+              {/* PLANOS */}
+              {/* =========================================== */}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                {/* ========================================= */}
+                {/* MENSAL */}
+                {/* ========================================= */}
+
+                <div className="rounded-2xl border border-gray-200 dark:border-slate-800 p-5">
+
+                  <div className="flex items-center gap-3 mb-4">
+
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400">
+
+                      <CalendarDays className="w-5 h-5" />
+
+                    </div>
+
+                    <div>
+
+                      <p className="font-bold text-gray-900 dark:text-white">
+                        Plano Mensal
+                      </p>
+
+                      <p className="text-xs text-gray-500 dark:text-slate-400">
+                        Acesso por 1 mês
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <Input
+                    label="Valor mensal (R$)"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={
+                      form.booklet_price_monthly ??
+                      0
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+
+                        booklet_price_monthly:
+                          Math.max(
+                            0,
+                            Number(
+                              e.target.value
+                            )
+                          ),
+                      })
+                    }
+                    placeholder="19,90"
+                  />
+
+                  <p className="mt-2 text-xs text-gray-400 dark:text-slate-500">
+                    Após o pagamento, a caderneta ficará válida por 1 mês.
+                  </p>
+
+                </div>
+
+                {/* ========================================= */}
+                {/* ANUAL */}
+                {/* ========================================= */}
+
+                <div className="relative overflow-hidden rounded-2xl border border-emerald-200 dark:border-emerald-900/60 p-5">
+
+                  <div className="absolute right-0 top-0">
+
+                    <span className="inline-flex rounded-bl-xl bg-emerald-100 dark:bg-emerald-950/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                      12 meses
+                    </span>
+
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-4">
+
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
+
+                      <CalendarRange className="w-5 h-5" />
+
+                    </div>
+
+                    <div>
+
+                      <p className="font-bold text-gray-900 dark:text-white">
+                        Plano Anual
+                      </p>
+
+                      <p className="text-xs text-gray-500 dark:text-slate-400">
+                        Acesso por 1 ano
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <Input
+                    label="Valor anual (R$)"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={
+                      form.booklet_price_annual ??
+                      0
+                    }
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+
+                        booklet_price_annual:
+                          Math.max(
+                            0,
+                            Number(
+                              e.target.value
+                            )
+                          ),
+                      })
+                    }
+                    placeholder="149,90"
+                  />
+
+                  <p className="mt-2 text-xs text-gray-400 dark:text-slate-500">
+                    Após o pagamento, a caderneta ficará válida por 1 ano.
+                  </p>
+
+                </div>
+
+              </div>
+
+              {/* =========================================== */}
+              {/* PDF */}
+              {/* =========================================== */}
+
+              <div className="border-t border-gray-100 dark:border-slate-800 pt-5">
+
+                <Textarea
+                  label="Informações que aparecem no PDF"
+                  value={
+                    form.pdf_info ||
+                    ''
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+
+                      pdf_info:
+                        e.target.value,
+                    })
+                  }
+                  rows={3}
+                  placeholder="Informações adicionais no rodapé do PDF"
+                />
+
+              </div>
 
             </div>
 
@@ -1025,7 +1275,9 @@ export function SettingsPage() {
 
               </div>
 
+              {/* =========================================== */}
               {/* STATUS DO CRON */}
+              {/* =========================================== */}
 
               <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 p-4">
 
@@ -1079,7 +1331,9 @@ export function SettingsPage() {
 
             <div className="space-y-4">
 
+              {/* =========================================== */}
               {/* AGENDAMENTO */}
+              {/* =========================================== */}
 
               <div>
 
@@ -1110,7 +1364,9 @@ export function SettingsPage() {
 
               </div>
 
+              {/* =========================================== */}
               {/* CONFIRMAÇÃO */}
+              {/* =========================================== */}
 
               <div>
 
@@ -1138,7 +1394,9 @@ export function SettingsPage() {
 
               </div>
 
+              {/* =========================================== */}
               {/* LEMBRETE */}
+              {/* =========================================== */}
 
               <div>
 
@@ -1166,7 +1424,9 @@ export function SettingsPage() {
 
               </div>
 
+              {/* =========================================== */}
               {/* ATRASADA */}
+              {/* =========================================== */}
 
               <div>
 

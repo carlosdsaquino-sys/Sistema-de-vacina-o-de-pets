@@ -1,0 +1,62 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 64 64"
+>
+  <!-- Fundo -->
+  <rect
+    width="64"
+    height="64"
+    rx="16"
+    fill="#569E1E"
+  />
+
+  <!-- Dedos da patinha -->
+  <ellipse
+    cx="19"
+    cy="21"
+    rx="6"
+    ry="8"
+    transform="rotate(-25 19 21)"
+    fill="white"
+  />
+
+  <ellipse
+    cx="29"
+    cy="16"
+    rx="6"
+    ry="8"
+    transform="rotate(-8 29 16)"
+    fill="white"
+  />
+
+  <ellipse
+    cx="40"
+    cy="17"
+    rx="6"
+    ry="8"
+    transform="rotate(10 40 17)"
+    fill="white"
+  />
+
+  <ellipse
+    cx="48"
+    cy="25"
+    rx="6"
+    ry="8"
+    transform="rotate(25 48 25)"
+    fill="white"
+  />
+
+  <!-- Almofada principal -->
+  <path
+    d="
+      M32 27
+      C24 27 16 36 17 45
+      C18 52 24 54 32 50
+      C40 54 47 52 48 45
+      C49 36 40 27 32 27
+      Z
+    "
+    fill="white"
+  />
+</svg>
