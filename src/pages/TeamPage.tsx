@@ -1,6 +1,6 @@
 import {
-  useCallback,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
@@ -40,6 +40,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { supabase } from '@/lib/supabase';
 
@@ -67,9 +68,47 @@ type ConfirmAction =
   | 'delete'
   | null;
 
+async function fetchTeamMembers() {
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from('profiles')
+      .select(
+        'id, nome, email, role, ativo, created_at'
+      )
+      .order('nome', {
+        ascending: true,
+      });
+
+  if (error) {
+    throw error;
+  }
+
+  return (
+    (data as TeamMember[]) ||
+    []
+  );
+}
+
 export function TeamPage() {
   const { toast } =
     useToast();
+
+  const {
+    user,
+    profile,
+    loading: authLoading,
+  } = useAuth();
+
+  const toastRef =
+    useRef(toast);
+
+  useEffect(() => {
+    toastRef.current =
+      toast;
+  }, [toast]);
 
   const [
     loading,
@@ -83,13 +122,6 @@ export function TeamPage() {
   ] =
     useState<TeamMember[]>([]);
 
-  const [
-    currentProfile,
-    setCurrentProfile,
-  ] =
-    useState<TeamMember | null>(
-      null
-    );
 
   const [
     createModal,
@@ -201,83 +233,45 @@ export function TeamPage() {
   // =========================================================
   // CARREGAR EQUIPE
   // =========================================================
+  //
+  // O AuthContext já carrega o perfil do usuário logado.
+  // Portanto, esta página não consulta novamente o próprio
+  // perfil e não chama auth.getUser() para montar a tela.
+  //
+  // A lista da equipe é carregada somente quando o perfil
+  // autenticado for administrador.
+  // =========================================================
 
-  const load =
-    useCallback(
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (
+      profile?.role !==
+      'admin'
+    ) {
+      setMembers([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    const loadInitialTeam =
       async () => {
         setLoading(true);
 
         try {
-          const {
-            data: authData,
-            error: authError,
-          } =
-            await supabase.auth.getUser();
+          const teamData =
+            await fetchTeamMembers();
 
-          if (
-            authError ||
-            !authData.user
-          ) {
-            throw new Error(
-              'Usuário não autenticado.'
+          if (!cancelled) {
+            setMembers(
+              teamData
             );
           }
-
-          const {
-            data: profile,
-            error: profileError,
-          } =
-            await supabase
-              .from('profiles')
-              .select(
-                'id, nome, email, role, ativo, created_at'
-              )
-              .eq(
-                'id',
-                authData.user.id
-              )
-              .single();
-
-          if (
-            profileError ||
-            !profile
-          ) {
-            throw (
-              profileError ||
-              new Error(
-                'Perfil não encontrado.'
-              )
-            );
-          }
-
-          setCurrentProfile(
-            profile as TeamMember
-          );
-
-          const {
-            data: teamData,
-            error: teamError,
-          } =
-            await supabase
-              .from('profiles')
-              .select(
-                'id, nome, email, role, ativo, created_at'
-              )
-              .order(
-                'nome',
-                {
-                  ascending: true,
-                }
-              );
-
-          if (teamError) {
-            throw teamError;
-          }
-
-          setMembers(
-            (teamData as TeamMember[]) ||
-              []
-          );
         } catch (
           error: unknown
         ) {
@@ -286,25 +280,62 @@ export function TeamPage() {
             error
           );
 
-          const message =
-            error instanceof Error
-              ? error.message
-              : 'Erro ao carregar equipe';
+          if (!cancelled) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : 'Erro ao carregar equipe';
 
-          toast(
-            message,
-            'error'
-          );
+            toastRef.current(
+              message,
+              'error'
+            );
+          }
         } finally {
-          setLoading(false);
+          if (!cancelled) {
+            setLoading(false);
+          }
         }
-      },
-      [toast]
-    );
+      };
 
-  useEffect(() => {
-    load();
-  }, [load]);
+    void loadInitialTeam();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authLoading,
+    profile?.role,
+  ]);
+
+  const reloadTeam =
+    async () => {
+      try {
+        const teamData =
+          await fetchTeamMembers();
+
+        setMembers(
+          teamData
+        );
+      } catch (
+        error: unknown
+      ) {
+        console.error(
+          'Erro ao atualizar equipe:',
+          error
+        );
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Erro ao atualizar equipe';
+
+        toast(
+          message,
+          'error'
+        );
+      }
+    };
 
   // =========================================================
   // NOVO USUÁRIO
@@ -419,7 +450,7 @@ export function TeamPage() {
           false
         );
 
-        await load();
+        await reloadTeam();
       } catch (
         error: unknown
       ) {
@@ -609,7 +640,7 @@ export function TeamPage() {
           null
         );
 
-        await load();
+        await reloadTeam();
       }
     };
 
@@ -633,7 +664,7 @@ export function TeamPage() {
           null
         );
 
-        await load();
+        await reloadTeam();
       }
     };
 
@@ -653,7 +684,7 @@ export function TeamPage() {
           null
         );
 
-        await load();
+        await reloadTeam();
       }
     };
 
@@ -677,7 +708,7 @@ export function TeamPage() {
           null
         );
 
-        await load();
+        await reloadTeam();
       }
     };
 
@@ -686,15 +717,15 @@ export function TeamPage() {
   // =========================================================
 
   const isAdmin =
-    currentProfile?.role ===
+    profile?.role ===
     'admin';
 
   const isSelectedSelf =
     !!selectedMember &&
     selectedMember.id ===
-      currentProfile?.id;
+      user?.id;
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <Layout title="Equipe">
         <PageHeader
@@ -782,7 +813,7 @@ export function TeamPage() {
             ) => {
               const isSelf =
                 member.id ===
-                currentProfile?.id;
+                user?.id;
 
               return (
                 <motion.div

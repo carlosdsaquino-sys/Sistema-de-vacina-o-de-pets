@@ -182,7 +182,9 @@ export function MessagesPage() {
           'error'
         );
 
-        return;
+        // Propaga o erro para impedir que refreshQueue
+        // mostre uma mensagem falsa de sucesso.
+        throw error;
       }
 
       setMessages(

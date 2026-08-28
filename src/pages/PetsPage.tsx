@@ -1847,9 +1847,7 @@ function PetProfile({
             .from(
               'vaccine_applications'
             )
-            .select(
-              '*, vaccine:vaccines(*)'
-            )
+            .select('*')
             .eq(
               'pet_id',
               pet.id
@@ -1871,13 +1869,33 @@ function PetProfile({
             ),
         ]);
 
-      const appList =
-        (apps as VaccineApplication[]) ||
-        [];
-
       const vaxList =
         (vax as Vaccine[]) ||
         [];
+
+      const vaccineById =
+        new Map(
+          vaxList.map(
+            (vaccine) => [
+              vaccine.id,
+              vaccine,
+            ]
+          )
+        );
+
+      const appList =
+        (
+          (apps as VaccineApplication[]) ||
+          []
+        ).map(
+          (application) => ({
+            ...application,
+            vaccine:
+              vaccineById.get(
+                application.vaccine_id
+              ),
+          })
+        );
 
       setApplications(
         appList

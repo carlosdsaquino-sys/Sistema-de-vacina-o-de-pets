@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -114,6 +115,11 @@ type AuthProfile =
     organization_id?: string | null;
   };
 
+type ProfileValidationResult = {
+  valid: boolean;
+  error: string | null;
+};
+
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
@@ -186,12 +192,40 @@ export function AuthProvider({
   ] =
     useState(true);
 
+  // Evita consultas duplicadas do mesmo perfil durante
+  // getSession + onAuthStateChange + signIn.
+  const profileRequestRef =
+    useRef<{
+      userId: string;
+      promise: Promise<ProfileValidationResult>;
+    } | null>(null);
+
+  const recentProfileValidationRef =
+    useRef<{
+      userId: string;
+      at: number;
+      result: ProfileValidationResult;
+    } | null>(null);
+
+  // focus + visibilitychange podem disparar juntos.
+  const lastAccessCheckAtRef =
+    useRef(0);
+
   // =======================================================
   // LIMPAR ESTADO LOCAL
   // =======================================================
 
   const clearAuthState =
     useCallback(() => {
+      profileRequestRef.current =
+        null;
+
+      recentProfileValidationRef.current =
+        null;
+
+      lastAccessCheckAtRef.current =
+        0;
+
       setSession(null);
       setUser(null);
       setProfile(null);
@@ -260,86 +294,147 @@ export function AuthProvider({
     useCallback(
       async (
         userId: string
-      ) => {
-        const {
-          data,
-          error,
-        } =
-          await supabase
-            .from('profiles')
-            .select('*')
-            .eq(
-              'id',
-              userId
-            )
-            .maybeSingle();
+      ): Promise<ProfileValidationResult> => {
+        const now =
+          Date.now();
 
-        if (error) {
-          console.error(
-            'Erro ao carregar perfil:',
-            error
-          );
+        const recent =
+          recentProfileValidationRef.current;
 
-          setProfile(null);
-          setLoading(false);
-
-          return {
-            valid: false,
-            error:
-              'Não foi possível validar o seu acesso.',
-          };
-        }
-
-        const authProfile =
-          data as
-            | AuthProfile
-            | null;
-
-        if (!authProfile) {
-          await signOut();
-
-          return {
-            valid: false,
-            error:
-              'Seu usuário não possui um perfil de acesso configurado.',
-          };
-        }
-
+        // Reaproveita uma validação feita há poucos instantes.
+        // Isso elimina chamadas repetidas causadas pelo evento
+        // de autenticação e pelo retorno do signIn.
         if (
-          authProfile.ativo ===
-          false
+          recent?.userId ===
+            userId &&
+          now - recent.at <
+            2000
         ) {
-          await signOut();
-
-          return {
-            valid: false,
-            error:
-              'Seu acesso foi desativado. Entre em contato com o administrador da empresa.',
-          };
+          return recent.result;
         }
 
+        // Se já existe uma consulta do mesmo usuário em andamento,
+        // todos os chamadores aguardam a mesma Promise.
         if (
-          !authProfile.organization_id
+          profileRequestRef.current
+            ?.userId ===
+          userId
         ) {
-          await signOut();
-
-          return {
-            valid: false,
-            error:
-              'Seu usuário ainda não está vinculado a uma empresa.',
-          };
+          return profileRequestRef.current
+            .promise;
         }
 
-        setProfile(
-          authProfile as Profile
-        );
+        const request =
+          (async (): Promise<ProfileValidationResult> => {
+            const {
+              data,
+              error,
+            } =
+              await supabase
+                .from('profiles')
+                .select('*')
+                .eq(
+                  'id',
+                  userId
+                )
+                .maybeSingle();
 
-        setLoading(false);
+            if (error) {
+              console.error(
+                'Erro ao carregar perfil:',
+                error
+              );
 
-        return {
-          valid: true,
-          error: null,
-        };
+              setProfile(null);
+              setLoading(false);
+
+              return {
+                valid: false,
+                error:
+                  'Não foi possível validar o seu acesso.',
+              };
+            }
+
+            const authProfile =
+              data as
+                | AuthProfile
+                | null;
+
+            if (!authProfile) {
+              await signOut();
+
+              return {
+                valid: false,
+                error:
+                  'Seu usuário não possui um perfil de acesso configurado.',
+              };
+            }
+
+            if (
+              authProfile.ativo ===
+              false
+            ) {
+              await signOut();
+
+              return {
+                valid: false,
+                error:
+                  'Seu acesso foi desativado. Entre em contato com o administrador da empresa.',
+              };
+            }
+
+            if (
+              !authProfile.organization_id
+            ) {
+              await signOut();
+
+              return {
+                valid: false,
+                error:
+                  'Seu usuário ainda não está vinculado a uma empresa.',
+              };
+            }
+
+            setProfile(
+              authProfile as Profile
+            );
+
+            setLoading(false);
+
+            return {
+              valid: true,
+              error: null,
+            };
+          })();
+
+        profileRequestRef.current =
+          {
+            userId,
+            promise: request,
+          };
+
+        try {
+          const result =
+            await request;
+
+          recentProfileValidationRef.current =
+            {
+              userId,
+              at: Date.now(),
+              result,
+            };
+
+          return result;
+        } finally {
+          if (
+            profileRequestRef.current
+              ?.promise ===
+            request
+          ) {
+            profileRequestRef.current =
+              null;
+          }
+        }
       },
       [
         signOut,
@@ -546,6 +641,23 @@ export function AuthProvider({
         if (checking) {
           return;
         }
+
+        const now =
+          Date.now();
+
+        // Ao voltar para a aba, focus e visibilitychange
+        // normalmente acontecem quase juntos. Uma única
+        // consulta é suficiente.
+        if (
+          now -
+            lastAccessCheckAtRef.current <
+          1000
+        ) {
+          return;
+        }
+
+        lastAccessCheckAtRef.current =
+          now;
 
         // Antes de consultar qualquer coisa,
         // também confirma se ainda estamos no mesmo dia.

@@ -33,18 +33,71 @@ export function StockPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: vax }, { data: movs }] = await Promise.all([
-      supabase.from('vaccines').select('*').order('nome'),
-      supabase
-        .from('stock_movements')
-        .select('*, vaccine:vaccines(*)')
-        .order('created_at', { ascending: false })
-        .limit(20),
-    ]);
-    setVaccines((vax as Vaccine[]) || []);
-    setMovements((movs as StockMovement[]) || []);
-    setLoading(false);
-  }, []);
+
+    try {
+      const [
+        vaccinesResult,
+        movementsResult,
+      ] = await Promise.all([
+        supabase
+          .from('vaccines')
+          .select('*')
+          .order('nome'),
+
+        /*
+         * Não usamos embed vaccine:vaccines(*) aqui.
+         * Depois das FKs multiempresa, o PostgREST pode encontrar
+         * mais de uma relação possível. A vacina é associada abaixo.
+         */
+        supabase
+          .from('stock_movements')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20),
+      ]);
+
+      const firstError =
+        vaccinesResult.error ||
+        movementsResult.error;
+
+      if (firstError) {
+        throw firstError;
+      }
+
+      const vaccineList =
+        (vaccinesResult.data as Vaccine[]) || [];
+
+      const vaccineById = new Map(
+        vaccineList.map((vaccine) => [
+          vaccine.id,
+          vaccine,
+        ])
+      );
+
+      const movementList =
+        ((movementsResult.data as StockMovement[]) || []).map(
+          (movement) => ({
+            ...movement,
+            vaccine: vaccineById.get(movement.vaccine_id),
+          })
+        );
+
+      setVaccines(vaccineList);
+      setMovements(movementList);
+    } catch (error) {
+      console.error(
+        'Erro ao carregar estoque:',
+        error
+      );
+
+      toast(
+        'Erro ao carregar o estoque',
+        'error'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
     load();
@@ -69,6 +122,19 @@ export function StockPage() {
     setSaving(true);
     const vaccine = vaccines.find((v) => v.id === form.vaccine_id);
     if (!vaccine) {
+      setSaving(false);
+      return;
+    }
+
+    if (
+      form.tipo === 'saida' &&
+      form.quantidade > vaccine.estoque_atual
+    ) {
+      toast(
+        `Estoque insuficiente. Disponível: ${vaccine.estoque_atual}.`,
+        'warning'
+      );
+
       setSaving(false);
       return;
     }

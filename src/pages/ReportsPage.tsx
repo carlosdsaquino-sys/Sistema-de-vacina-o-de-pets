@@ -19,17 +19,20 @@ import {
 } from '@/components/ui/Card';
 import { StatCard } from '@/components/StatCard';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { useToast } from '@/contexts/ToastContext';
 import { supabase } from '@/lib/supabase';
 import { todayISO, addDays } from '@/lib/utils';
 import type {
   VaccineApplication,
   Appointment,
   StockMovement,
+  Vaccine,
 } from '@/types/database';
 
 type PeriodFilter = 'hoje' | '7dias' | '30dias' | 'mes' | 'custom';
 
 export function ReportsPage() {
+  const { toast } = useToast();
   const [period, setPeriod] = useState<PeriodFilter>('30dias');
   const [customStart, setCustomStart] = useState(todayISO());
   const [customEnd, setCustomEnd] = useState(todayISO());
@@ -93,36 +96,106 @@ export function ReportsPage() {
   const load = useCallback(async () => {
     setLoading(true);
 
-    const { start, end } = getDateRange();
+    try {
+      const { start, end } = getDateRange();
 
-    const [{ data: apps }, { data: appts }, { data: movs }] =
-      await Promise.all([
+      /*
+       * As relações multiempresa criaram uma FK simples e outra
+       * composta para algumas tabelas. Em vez de pedir ao PostgREST
+       * para adivinhar qual FK usar, carregamos as vacinas separadamente
+       * e montamos a relação no frontend.
+       */
+      const [
+        appsResult,
+        apptsResult,
+        movsResult,
+        vaccinesResult,
+      ] = await Promise.all([
         supabase
           .from('vaccine_applications')
-          .select('*, vaccine:vaccines(*)')
+          .select('*')
           .gte('data_aplicacao', start)
           .lte('data_aplicacao', end)
           .order('data_aplicacao', { ascending: false }),
 
         supabase
           .from('appointments')
-          .select('*, vaccine:vaccines(*)')
+          .select('*')
           .gte('data_agendada', start)
           .lte('data_agendada', end),
 
         supabase
           .from('stock_movements')
-          .select('*, vaccine:vaccines(*)')
+          .select('*')
           .gte('created_at', start + 'T00:00:00')
           .lte('created_at', end + 'T23:59:59'),
+
+        supabase
+          .from('vaccines')
+          .select('*'),
       ]);
 
-    setApplications((apps as VaccineApplication[]) || []);
-    setAppointments((appts as Appointment[]) || []);
-    setMovements((movs as StockMovement[]) || []);
+      const firstError =
+        appsResult.error ||
+        apptsResult.error ||
+        movsResult.error ||
+        vaccinesResult.error;
 
-    setLoading(false);
-  }, [getDateRange]);
+      if (firstError) {
+        throw firstError;
+      }
+
+      const vaccineList =
+        (vaccinesResult.data as Vaccine[]) || [];
+
+      const vaccineById = new Map(
+        vaccineList.map((vaccine) => [
+          vaccine.id,
+          vaccine,
+        ])
+      );
+
+      const appList =
+        ((appsResult.data as VaccineApplication[]) || []).map(
+          (application) => ({
+            ...application,
+            vaccine: vaccineById.get(application.vaccine_id),
+          })
+        );
+
+      const appointmentList =
+        ((apptsResult.data as Appointment[]) || []).map(
+          (appointment) => ({
+            ...appointment,
+            vaccine: vaccineById.get(appointment.vaccine_id),
+          })
+        );
+
+      const movementList =
+        ((movsResult.data as StockMovement[]) || []).map(
+          (movement) => ({
+            ...movement,
+            vaccine: vaccineById.get(movement.vaccine_id),
+          })
+        );
+
+      setApplications(appList);
+      setAppointments(appointmentList);
+      setMovements(movementList);
+    } catch (error) {
+      console.error(
+        'Erro ao carregar relatórios:',
+        error
+      );
+
+      toast(
+        'Erro ao carregar os relatórios',
+        'error'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [getDateRange, toast]);
 
   useEffect(() => {
     load();
