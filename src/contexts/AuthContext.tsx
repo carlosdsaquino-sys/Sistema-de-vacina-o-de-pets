@@ -19,6 +19,92 @@ import type {
 } from '@/types/database';
 
 // =========================================================
+// CONFIGURAÇÃO DA SESSÃO DIÁRIA
+// =========================================================
+//
+// A sessão é válida somente no dia em que o usuário fez login.
+// Quando virar o dia:
+// 1. faz logout;
+// 2. limpa a sessão local;
+// 3. recarrega a página inteira.
+//
+// O reload completo também faz o navegador buscar a versão
+// mais recente publicada no Vercel.
+// =========================================================
+
+const DAILY_SESSION_KEY =
+  'patapass-login-date';
+
+function getTodayKey() {
+  const now =
+    new Date();
+
+  const year =
+    now.getFullYear();
+
+  const month =
+    String(
+      now.getMonth() + 1
+    ).padStart(
+      2,
+      '0'
+    );
+
+  const day =
+    String(
+      now.getDate()
+    ).padStart(
+      2,
+      '0'
+    );
+
+  return `${year}-${month}-${day}`;
+}
+
+function getMillisecondsUntilNextDay() {
+  const now =
+    new Date();
+
+  const nextDay =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0,
+      0,
+      1,
+      0
+    );
+
+  return Math.max(
+    1000,
+    nextDay.getTime() -
+      now.getTime()
+  );
+}
+
+function markSessionForToday() {
+  localStorage.setItem(
+    DAILY_SESSION_KEY,
+    getTodayKey()
+  );
+}
+
+function clearDailySession() {
+  localStorage.removeItem(
+    DAILY_SESSION_KEY
+  );
+}
+
+function isSessionFromToday() {
+  return (
+    localStorage.getItem(
+      DAILY_SESSION_KEY
+    ) === getTodayKey()
+  );
+}
+
+// =========================================================
 // TIPOS
 // =========================================================
 
@@ -113,7 +199,7 @@ export function AuthProvider({
     }, []);
 
   // =======================================================
-  // LOGOUT
+  // LOGOUT NORMAL
   // =======================================================
 
   const signOut =
@@ -131,7 +217,36 @@ export function AuthProvider({
           );
         }
       } finally {
+        clearDailySession();
         clearAuthState();
+      }
+    }, [
+      clearAuthState,
+    ]);
+
+  // =======================================================
+  // ENCERRAR SESSÃO POR VIRADA DO DIA
+  // =======================================================
+
+  const expireDailySession =
+    useCallback(async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch (
+        error
+      ) {
+        console.error(
+          'Erro ao encerrar sessão diária:',
+          error
+        );
+      } finally {
+        clearDailySession();
+        clearAuthState();
+
+        // Reload completo:
+        // garante que uma versão nova publicada no Vercel
+        // seja carregada na próxima tela.
+        window.location.reload();
       }
     }, [
       clearAuthState,
@@ -180,7 +295,6 @@ export function AuthProvider({
             | AuthProfile
             | null;
 
-        // Perfil inexistente = usuário sem acesso configurado.
         if (!authProfile) {
           await signOut();
 
@@ -191,7 +305,6 @@ export function AuthProvider({
           };
         }
 
-        // Usuário desativado = logout imediato.
         if (
           authProfile.ativo ===
           false
@@ -205,7 +318,6 @@ export function AuthProvider({
           };
         }
 
-        // Usuário sem empresa não pode acessar o sistema.
         if (
           !authProfile.organization_id
         ) {
@@ -252,23 +364,37 @@ export function AuthProvider({
           return;
         }
 
-        setSession(
-          nextSession
-        );
-
-        setUser(
-          nextSession?.user ??
-            null
-        );
-
+        // Não existe sessão.
         if (
           !nextSession?.user
         ) {
+          setSession(null);
+          setUser(null);
           setProfile(null);
           setLoading(false);
 
           return;
         }
+
+        // Existe uma sessão do Supabase, mas ela não pertence
+        // ao dia atual. Força logout + reload completo.
+        if (
+          !isSessionFromToday()
+        ) {
+          setLoading(true);
+
+          await expireDailySession();
+
+          return;
+        }
+
+        setSession(
+          nextSession
+        );
+
+        setUser(
+          nextSession.user
+        );
 
         setLoading(true);
 
@@ -315,23 +441,93 @@ export function AuthProvider({
       listener.subscription.unsubscribe();
     };
   }, [
+    expireDailySession,
     loadProfile,
   ]);
 
   // =======================================================
-  // VIGIAR USUÁRIO DESATIVADO
+  // ENCERRAR AUTOMATICAMENTE AO VIRAR O DIA
   // =======================================================
-  //
-  // Segurança real:
-  // a RLS já bloqueia os dados assim que ativo = false.
-  //
-  // Experiência:
-  // aqui o frontend percebe a desativação e encerra a sessão.
-  //
-  // Usamos:
-  // 1. Realtime, quando disponível;
-  // 2. verificação ao voltar para a janela;
-  // 3. fallback periódico a cada 30 segundos.
+
+  useEffect(() => {
+    if (
+      !session?.user
+    ) {
+      return;
+    }
+
+    const validateDay =
+      () => {
+        if (
+          !isSessionFromToday()
+        ) {
+          void expireDailySession();
+
+          return false;
+        }
+
+        return true;
+      };
+
+    // Agenda o encerramento para 00:00:01 no horário
+    // local do computador onde o sistema está aberto.
+    const timeoutId =
+      window.setTimeout(
+        () => {
+          void expireDailySession();
+        },
+        getMillisecondsUntilNextDay()
+      );
+
+    // Se o computador dormir durante a madrugada,
+    // essa verificação pega a virada do dia ao voltar.
+    const handleFocus =
+      () => {
+        validateDay();
+      };
+
+    const handleVisibility =
+      () => {
+        if (
+          document.visibilityState ===
+          'visible'
+        ) {
+          validateDay();
+        }
+      };
+
+    window.addEventListener(
+      'focus',
+      handleFocus
+    );
+
+    document.addEventListener(
+      'visibilitychange',
+      handleVisibility
+    );
+
+    return () => {
+      window.clearTimeout(
+        timeoutId
+      );
+
+      window.removeEventListener(
+        'focus',
+        handleFocus
+      );
+
+      document.removeEventListener(
+        'visibilitychange',
+        handleVisibility
+      );
+    };
+  }, [
+    session?.user?.id,
+    expireDailySession,
+  ]);
+
+  // =======================================================
+  // VIGIAR USUÁRIO DESATIVADO
   // =======================================================
 
   useEffect(() => {
@@ -348,6 +544,16 @@ export function AuthProvider({
     const checkAccess =
       async () => {
         if (checking) {
+          return;
+        }
+
+        // Antes de consultar qualquer coisa,
+        // também confirma se ainda estamos no mesmo dia.
+        if (
+          !isSessionFromToday()
+        ) {
+          await expireDailySession();
+
           return;
         }
 
@@ -439,8 +645,6 @@ export function AuthProvider({
               return;
             }
 
-            // Se o próprio perfil foi atualizado,
-            // mantém nome/cargo etc. sincronizados.
             setProfile(
               (current) =>
                 current
@@ -463,7 +667,6 @@ export function AuthProvider({
         30_000
       );
 
-    // Ao voltar para a aba/janela, valida imediatamente.
     const handleFocus =
       () => {
         void checkAccess();
@@ -510,6 +713,7 @@ export function AuthProvider({
     };
   }, [
     session?.user?.id,
+    expireDailySession,
     signOut,
   ]);
 
@@ -523,6 +727,10 @@ export function AuthProvider({
         email: string,
         password: string
       ) => {
+        // Marcamos o dia antes do signIn porque o Supabase
+        // dispara onAuthStateChange durante o processo.
+        markSessionForToday();
+
         const {
           data,
           error,
@@ -537,6 +745,8 @@ export function AuthProvider({
             });
 
         if (error) {
+          clearDailySession();
+
           return {
             error:
               error.message,
@@ -555,8 +765,6 @@ export function AuthProvider({
           };
         }
 
-        // Não basta a senha estar correta.
-        // O perfil precisa estar ativo e vinculado a uma empresa.
         const result =
           await loadProfile(
             data.user.id
@@ -568,6 +776,10 @@ export function AuthProvider({
               result.error,
           };
         }
+
+        // Confirma oficialmente que esta sessão pertence
+        // ao dia de hoje.
+        markSessionForToday();
 
         setSession(
           data.session
@@ -603,6 +815,8 @@ export function AuthProvider({
         password: string,
         nome: string
       ) => {
+        markSessionForToday();
+
         const {
           data,
           error,
@@ -619,6 +833,8 @@ export function AuthProvider({
             });
 
         if (error) {
+          clearDailySession();
+
           return {
             error:
               error.message,
