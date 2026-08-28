@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CalendarPlus,
   Users,
+  UserCog,
   Dog,
   Syringe,
   Boxes,
@@ -75,6 +76,11 @@ const navItems = [
     to: '/relatorios',
     label: 'Relatórios',
     icon: BarChart3,
+  },
+  {
+    to: '/equipe',
+    label: 'Equipe',
+    icon: UserCog,
   },
   {
     to: '/configuracoes',

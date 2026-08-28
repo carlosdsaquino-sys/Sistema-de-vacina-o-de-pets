@@ -437,7 +437,7 @@ export function BookletPage() {
               supabase
                 .from('pets')
                 .select(
-                  '*, tutor:tutors(*)'
+                  '*, tutor:tutors!pets_org_tutor_fkey(*)'
                 )
                 .eq(
                   'ativo',
@@ -452,7 +452,7 @@ export function BookletPage() {
                   'digital_booklets'
                 )
                 .select(
-                  '*, pet:pets(*, tutor:tutors(*)), payments(*)'
+                  '*, pet:pets!digital_booklets_org_pet_fkey(*, tutor:tutors!pets_org_tutor_fkey(*)), payments:payments!payments_org_booklet_fkey(*)'
                 )
                 .order(
                   'created_at',
@@ -1010,7 +1010,7 @@ export function BookletPage() {
             'vaccine_applications'
           )
           .select(
-            '*, vaccine:vaccines(*)'
+            '*, vaccine:vaccines!vaccine_applications_org_vaccine_fkey(*)'
           )
           .eq(
             'pet_id',

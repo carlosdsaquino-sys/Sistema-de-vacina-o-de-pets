@@ -44,26 +44,69 @@ export function ApplicationsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: appts }, { data: apps }, { data: vax }, { data: bat }] = await Promise.all([
-      supabase
-        .from('appointments')
-        .select('*, tutor:tutors(*), pet:pets(*), vaccine:vaccines(*)')
-        .in('status', ['agendado', 'confirmado', 'atrasado'])
-        .order('data_agendada'),
-      supabase
-        .from('vaccine_applications')
-        .select('*, vaccine:vaccines(*), pet:pets(*)')
-        .order('created_at', { ascending: false })
-        .limit(30),
-      supabase.from('vaccines').select('*').eq('ativo', true),
-      supabase.from('vaccine_batches').select('*, vaccine:vaccines(*)'),
-    ]);
-    setAppointments((appts as Appointment[]) || []);
-    setApplications((apps as VaccineApplication[]) || []);
-    setVaccines((vax as Vaccine[]) || []);
-    setBatches((bat as VaccineBatch[]) || []);
-    setLoading(false);
-  }, []);
+
+    try {
+      const [
+        { data: appts, error: apptsError },
+        { data: apps, error: appsError },
+        { data: vax, error: vaxError },
+        { data: bat, error: batError },
+      ] = await Promise.all([
+        supabase
+          .from('appointments')
+          .select(`
+            *,
+            tutor:tutors!appointments_org_tutor_fkey(*),
+            pet:pets!appointments_org_pet_fkey(*),
+            vaccine:vaccines!appointments_org_vaccine_fkey(*)
+          `)
+          .in('status', ['agendado', 'confirmado', 'atrasado'])
+          .order('data_agendada'),
+
+        supabase
+          .from('vaccine_applications')
+          .select(`
+            *,
+            vaccine:vaccines!vaccine_applications_org_vaccine_fkey(*),
+            pet:pets!vaccine_applications_org_pet_fkey(*)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(30),
+
+        supabase
+          .from('vaccines')
+          .select('*')
+          .eq('ativo', true),
+
+        supabase
+          .from('vaccine_batches')
+          .select(`
+            *,
+            vaccine:vaccines!vaccine_batches_org_vaccine_fkey(*)
+          `),
+      ]);
+
+      if (apptsError) throw apptsError;
+      if (appsError) throw appsError;
+      if (vaxError) throw vaxError;
+      if (batError) throw batError;
+
+      setAppointments((appts as Appointment[]) || []);
+      setApplications((apps as VaccineApplication[]) || []);
+      setVaccines((vax as Vaccine[]) || []);
+      setBatches((bat as VaccineBatch[]) || []);
+    } catch (error) {
+      console.error('Erro ao carregar aplicações:', error);
+      toast('Erro ao carregar aplicações', 'error');
+
+      setAppointments([]);
+      setApplications([]);
+      setVaccines([]);
+      setBatches([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
     load();

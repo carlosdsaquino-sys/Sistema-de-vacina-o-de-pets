@@ -123,9 +123,12 @@ export function AppointmentsPage() {
     const { data, error } =
       await supabase
         .from('appointments')
-        .select(
-          '*, tutor:tutors(*), pet:pets(*), vaccine:vaccines(*)'
-        )
+        .select(`
+          *,
+          tutor:tutors!appointments_org_tutor_fkey(*),
+          pet:pets!appointments_org_pet_fkey(*),
+          vaccine:vaccines!appointments_org_vaccine_fkey(*)
+        `)
         .order(
           'data_agendada',
           {

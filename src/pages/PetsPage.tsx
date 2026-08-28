@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+
 import { motion } from 'framer-motion';
 
 import {
@@ -183,8 +184,8 @@ export function PetsPage() {
     ] = await Promise.all([
       supabase
         .from('pets')
-        .select('*, tutor:tutors(*)')
-        .order('created_at', {
+        .select('*, tutor:tutors!pets_org_tutor_fkey(*)')
+        .order('created_at', {  
           ascending: false,
         }),
 
@@ -360,6 +361,25 @@ export function PetsPage() {
       return null;
     }
 
+    // Descobre a empresa do usuário logado.
+    // O caminho no Storage passa a ficar:
+    // organization_id/pet_id/foto-arquivo.ext
+    const {
+      data: organizationId,
+      error: organizationError,
+    } = await supabase.rpc(
+      'current_organization_id'
+    );
+
+    if (
+      organizationError ||
+      !organizationId
+    ) {
+      throw new Error(
+        'Não foi possível identificar a empresa do usuário.'
+      );
+    }
+
     const extension =
       photoFile.name
         .split('.')
@@ -368,7 +388,7 @@ export function PetsPage() {
       'jpg';
 
     const filePath =
-      `${petId}/foto-${Date.now()}.${extension}`;
+      `${organizationId}/${petId}/foto-${Date.now()}.${extension}`;
 
     const {
       error: uploadError,

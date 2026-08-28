@@ -122,6 +122,14 @@ const ReportsPage = lazy(() =>
   )
 );
 
+const TeamPage = lazy(() =>
+  import('@/pages/TeamPage').then(
+    (module) => ({
+      default: module.TeamPage,
+    })
+  )
+);
+
 const SettingsPage = lazy(() =>
   import('@/pages/SettingsPage').then(
     (module) => ({
@@ -372,6 +380,19 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ================================================= */}
+        {/* EQUIPE */}
+        {/* ================================================= */}
+
+        <Route
+          path="/equipe"
+          element={
+            <ProtectedRoute>
+              <TeamPage />
             </ProtectedRoute>
           }
         />

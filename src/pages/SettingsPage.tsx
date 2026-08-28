@@ -266,6 +266,31 @@ export function SettingsPage() {
         );
       }
 
+      // =====================================================
+      // IDENTIFICAR A EMPRESA DO USUÁRIO LOGADO
+      // =====================================================
+
+      const {
+        data: organizationId,
+        error: organizationError,
+      } =
+        await supabase.rpc(
+          'current_organization_id'
+        );
+
+      if (
+        organizationError ||
+        !organizationId
+      ) {
+        throw new Error(
+          'Não foi possível identificar a empresa do usuário.'
+        );
+      }
+
+      // =====================================================
+      // EXTENSÃO DO ARQUIVO
+      // =====================================================
+
       const extension =
         logoFile.name
           .split('.')
@@ -273,8 +298,13 @@ export function SettingsPage() {
           ?.toLowerCase() ||
         'png';
 
+      // =====================================================
+      // CAMINHO MULTIEMPRESA
+      // organization_id/logo/logo-arquivo.ext
+      // =====================================================
+
       const filePath =
-        `logo/logo-${Date.now()}.${extension}`;
+        `${organizationId}/logo/logo-${Date.now()}.${extension}`;
 
       const {
         error: uploadError,

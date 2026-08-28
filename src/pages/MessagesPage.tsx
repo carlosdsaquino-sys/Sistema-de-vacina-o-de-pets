@@ -127,21 +127,21 @@ export function MessagesPage() {
             created_at,
             sent_at,
 
-            tutor:tutors (
+            tutor:tutors!message_logs_org_tutor_fkey (
               id,
               nome,
               whatsapp
             ),
 
-            pet:pets (
+            pet:pets!message_logs_org_pet_fkey (
               id,
               nome
             ),
 
-            application:vaccine_applications (
+            application:vaccine_applications!message_logs_org_application_fkey (
               id,
 
-              vaccine:vaccines (
+              vaccine:vaccines!vaccine_applications_org_vaccine_fkey (
                 nome
               )
             )
